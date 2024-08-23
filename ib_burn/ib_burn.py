@@ -35,6 +35,7 @@ WRITER_STARTUP_TIME = CONFIG["ib_burn"]["writer_startup_time"]
 STAGE_INNER_TIMEOUT = PARALLEL_STAGE_TIME + SERVER_STARTUP_TIME + WRITER_STARTUP_TIME + 10
 
 
+
 GUID_TO_HOST_IB_HCA = {}
 GUID_TO_SWITCH_NAME = {}
 
@@ -42,6 +43,8 @@ SWITCH_TO_SWITCH_LINKS = collections.Counter()
 LEAF_SWITCH_TO_HOST_IB = collections.defaultdict(list)
 
 for line in open("ib_server.list"):
+    if line is None:
+        continue
     guid, host, hca = line.split()
     GUID_TO_HOST_IB_HCA[guid] = (host, hca)
 
@@ -51,6 +54,8 @@ for line in open("ib_switch.list"):
     GUID_TO_SWITCH_NAME[guid] = name
 
 for line in open("ib_switch.link"):
+    if not line:
+        continue
     guid1, guid2, port1, port2 = line.split()
     if guid1 in GUID_TO_HOST_IB_HCA:
         host, hca = GUID_TO_HOST_IB_HCA[guid1]
@@ -95,7 +100,7 @@ THROUGHPUT_SHAPE = (
     len(GUID_TO_SWITCH_INDEX),
 )
 
-if False:
+if True:
     THROUGHPUT_MMAP = numpy.memmap("ib_routes.mmap", dtype=numpy.float64, mode='w+', shape=THROUGHPUT_SHAPE)
 
     for source_guid, target_guid in itertools.product(BURN_SOURCE_GUIDS, BURN_TARGET_GUIDS):
@@ -162,7 +167,6 @@ for guid1, guid2 in SWITCH_TO_SWITCH_LINKS.keys():
 
 
 print(NEEDED_LINKS.sum())
-
 for stage in range(128):
     random.shuffle(POSSIBLE_ROUTES)
 
@@ -229,15 +233,15 @@ for stage, stage_paths in enumerate(SELECTED_ROUTES):
         ))
         stage_chunk.append(paired_host_hcas)
     for chunk, paired_host_hcas in enumerate(stage_chunk):
-        SCRIPT.append(f"echo stage {stage}; chunk {chunk} / {chunk_count}; servers")
+        SCRIPT.append(f"echo \"stage {stage}; chunk {chunk} / {chunk_count}; servers\"")
         for (source_host, source_hca), (target_host, target_hca) in paired_host_hcas:
             server_port = list(CONFIG["ib_hcas"]).index(target_hca) + 40_000
             target_addr = CONFIG["node_info"]["nodes"].get(target_host, target_host)
             target_user = CONFIG["node_info"]["user"]
             SCRIPT.append(" ".join((
                 "ssh",
-                f"{target_user}@{target_addr}",
-                "timeout {STAGE_INNER_TIMEOUT}",
+                f"{target_user}@{target_host}",
+                f"timeout {STAGE_INNER_TIMEOUT}",
                 "stdbuf -oL -eL",
                 "ib_write_bw",
                 "--CPU-freq",
@@ -245,11 +249,11 @@ for stage, stage_paths in enumerate(SELECTED_ROUTES):
                 f"--ib-dev={target_hca}",
                 f"--duration {PARALLEL_STAGE_TIME}",
                 f"--port {server_port}",
-                "&> ./ib_burn_logs/{source_host}-{source_hca}-{target_host}-{target_hca}-server.log",
+                f"&> ./ib_burn_logs/{source_host}-{source_hca}-{target_host}-{target_hca}-server.log",
                 "&",
             )))
         SCRIPT.append(f"sleep {SERVER_STARTUP_TIME}")
-        SCRIPT.append(f"echo stage {stage}; chunk {chunk} / {chunk_count}; writers")
+        SCRIPT.append(f"echo \"stage {stage}; chunk {chunk} / {chunk_count}; writers\"")
         for (source_host, source_hca), (target_host, target_hca) in paired_host_hcas:
             server_port = list(CONFIG["ib_hcas"]).index(target_hca) + 40_000
             target_addr = CONFIG["node_info"]["nodes"].get(target_host, target_host)
@@ -258,7 +262,7 @@ for stage, stage_paths in enumerate(SELECTED_ROUTES):
             SCRIPT.append(" ".join((
                 "ssh",
                 f"{source_user}@{source_host}",
-                "timeout {STAGE_INNER_TIMEOUT}",
+                f"timeout {STAGE_INNER_TIMEOUT}",
                 "stdbuf -oL -eL",
                 "ib_write_bw",
                 "--CPU-freq",
@@ -266,14 +270,14 @@ for stage, stage_paths in enumerate(SELECTED_ROUTES):
                 f"--ib-dev={source_hca}",
                 f"--duration {PARALLEL_STAGE_TIME}",
                 f"--port {server_port}",
-                f"{target_host}",
-                "&> ./ib_burn_logs/{source_host}-{source_hca}-{target_host}-{target_hca}-writer.log",
+                f"{target_addr}",
+                f"&> ./ib_burn_logs/{source_host}-{source_hca}-{target_host}-{target_hca}-writer.log",
                 "&",
             )))
         SCRIPT.append(f"sleep {WRITER_STARTUP_TIME}")
-    SCRIPT.append(f"echo stage {stage}; awaiting")
+    SCRIPT.append(f"echo \"stage {stage}; awaiting\"")
     SCRIPT.append("wait")
-    SCRIPT.append(f"echo stage {stage}; finished")
+    SCRIPT.append(f"echo \"stage {stage}; finished\"")
 
 
 SCRIPT_FILE = open("ib_burn.sh", "w")
