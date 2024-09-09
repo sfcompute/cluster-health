@@ -1,4 +1,4 @@
-#!/u    sr/bin/env python3
+#!/usr/bin/env python3
 
 """
 Generates a comprehensive IB fabric burn-in workload (ib_burn.sh).
@@ -238,15 +238,18 @@ for stage, stage_paths in enumerate(SELECTED_ROUTES):
             server_port = list(CONFIG["ib_hcas"]).index(target_hca) + 40_000
             target_addr = CONFIG["node_info"]["nodes"].get(target_host, target_host)
             target_user = CONFIG["node_info"]["user"]
+
+            target_cuda = target_hca.split("_")[1]
             SCRIPT.append(" ".join((
                 "ssh -o StrictHostKeyChecking=no",
                 f"{target_user}@{target_host}",
                 f"timeout {STAGE_INNER_TIMEOUT}",
                 "stdbuf -oL -eL",
-                "ib_write_bw",
+                "/sf/perftest/ib_write_bw",
                 "--CPU-freq",
                 "--report_gbits",
                 f"--ib-dev={target_hca}",
+                f"--use_cuda {target_cuda}", 
                 f"--duration {PARALLEL_STAGE_TIME}",
                 f"--port {server_port}",
                 f"&> ./ib_burn_logs/{source_host}-{source_hca}-{target_host}-{target_hca}-server.log",
@@ -259,15 +262,18 @@ for stage, stage_paths in enumerate(SELECTED_ROUTES):
             target_addr = CONFIG["node_info"]["nodes"].get(target_host, target_host)
             source_addr = CONFIG["node_info"]["nodes"].get(source_host, source_host)
             source_user = CONFIG["node_info"]["user"]
+
+            source_cuda = source_hca.split("_")[1]
             SCRIPT.append(" ".join((
                 "ssh -o StrictHostKeyChecking=no",
                 f"{source_user}@{source_host}",
                 f"timeout {STAGE_INNER_TIMEOUT}",
                 "stdbuf -oL -eL",
-                "ib_write_bw",
+                "/sf/perftest/ib_write_bw",
                 "--CPU-freq",
                 "--report_gbits",
                 f"--ib-dev={source_hca}",
+                f"--use_cuda {source_cuda}", 
                 f"--duration {PARALLEL_STAGE_TIME}",
                 f"--port {server_port}",
                 f"{target_addr}",
